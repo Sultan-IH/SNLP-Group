@@ -19,17 +19,15 @@ import numpy as np
 from evaluation.Evaluator import Evaluator
 import matplotlib.pyplot as plt
 
-
-
+from pathlib import Path
 from generator import Generator
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda:0')
-    print("RUNNIG ON CUDA") #'
+    print("RUNNIG ON CUDA")  # '
 else:
-    DEVICE = torch.device('cpu')  #'cuda:0'
+    DEVICE = torch.device('cpu')  # 'cuda:0'
     print("RUNNING ON CPU")
-
 
 VOCAB_SIZE = 8000
 MIN_SEQ_LEN = 5
@@ -45,25 +43,29 @@ DIS_EMBEDDING_DIM = 128
 DIS_HIDDEN_DIM = 128
 
 CAPACITY_RM = 100000
-PRETRAIN_GENERATOR = False
-PRETRAIN_DISCRIMINATOR = False
+PRETRAIN_GENERATOR = True
+PRETRAIN_DISCRIMINATOR = True
 POLICY_GRADIENT = True
-ACTOR_CHECKPOINT = "generator_checkpoint19.pth.tar"
+ACTOR_CHECKPOINT= Path("generator_checkpoint19.pth.tar")
+
 DISCRIMINATOR_MLE_LR = 5e-2
 ACTOR_LR = 1e-2
 CRITIC_LR = 1e-2
 DISCRIMINATOR_LR = 1e-2
-AC = True
-SEQGAN = False
+AC = False
+SEQGAN = True
+
 if SEQGAN:
-    DISCRIMINATOR_CHECKPOINT = "discriminator_final.pth.tar"
+    DISCRIMINATOR_CHECKPOINT = Path("discriminator_final.pth.tar")
 else:
-    DISCRIMINATOR_CHECKPOINT = None#"discriminator_final_LM2.pth.tar"
+    DISCRIMINATOR_CHECKPOINT = Path("discriminator_final_LM2.pth.tar")
 
 AC_WARMUP = 1000
 DISCOUNT_FACTOR = 0.99
 BATCH_SIZE_TESTING = 256
 NUM_SAMPLES = 3
+
+
 # Number of gen
 
 def train_generator_PG(context, reply, gen, gen_opt, dis, num_samples=0, TF=0):
@@ -75,11 +77,11 @@ def train_generator_PG(context, reply, gen, gen_opt, dis, num_samples=0, TF=0):
     # Forward pass
     fake_reply, word_probabilities, hiddens = gen.sample(context, reply, TF=TF)
 
-    if TF==1:
+    if TF == 1:
         if SEQGAN:
-            rewards = torch.ones(BATCH_SIZE, MAX_SEQ_LEN-1).to(DEVICE)
+            rewards = torch.ones(BATCH_SIZE, MAX_SEQ_LEN - 1).to(DEVICE)
         else:
-            rewards = torch.ones(BATCH_SIZE, MAX_SEQ_LEN-1).to(DEVICE)
+            rewards = torch.ones(BATCH_SIZE, MAX_SEQ_LEN - 1).to(DEVICE)
 
     # Compute word-level rewards
     elif SEQGAN:
@@ -90,7 +92,7 @@ def train_generator_PG(context, reply, gen, gen_opt, dis, num_samples=0, TF=0):
 
     # Compute perplexity
     entropy = torch.mean(word_probabilities.log(), dim=1)
-    perplexity = torch.mean(2**(-entropy)).item()
+    perplexity = torch.mean(2 ** (-entropy)).item()
 
     # Compute REINFORCE loss with the assumption that G = R_t
     pg_loss = gen.compute_reinforce_loss(rewards.detach(), word_probabilities)
@@ -108,7 +110,8 @@ def train_generator_PG(context, reply, gen, gen_opt, dis, num_samples=0, TF=0):
 
     return perplexity
 
-def train_generator_PGAC(context, reply, gen, dis, memory, critic, AC_optimizer, EOU,PAD):
+
+def train_generator_PGAC(context, reply, gen, dis, memory, critic, AC_optimizer, EOU, PAD):
     """
     Actor Critic Pseudocode:
     for word, t in enumerate(setence):
@@ -127,8 +130,8 @@ def train_generator_PGAC(context, reply, gen, dis, memory, critic, AC_optimizer,
     encoder_output, hidden = gen.encoder(context)
     hidden = gen.decoder._init_state(hidden)
     input = torch.autograd.Variable(context.data[:, 0])  # sos
-    samples = torch.autograd.Variable(PAD*torch.ones(BATCH_SIZE,MAX_SEQ_LEN)).to(DEVICE)
-    samples[:,0] = input
+    samples = torch.autograd.Variable(PAD * torch.ones(BATCH_SIZE, MAX_SEQ_LEN)).to(DEVICE)
+    samples[:, 0] = input
     active_ep_idx = torch.ones(BATCH_SIZE).to(DEVICE)
     EOU = torch.tensor(EOU).repeat(BATCH_SIZE).to(DEVICE)
     function = torch.nn.functional.log_softmax
@@ -136,7 +139,7 @@ def train_generator_PGAC(context, reply, gen, dis, memory, critic, AC_optimizer,
     # Pass through decoder and sample action (word) from resulting vocab distribution
     for t in range(1, MAX_SEQ_LEN):
         output, hidden, attn_weights = gen.decoder.forward_step(
-                input.unsqueeze(1), hidden, encoder_output, function)
+            input.unsqueeze(1), hidden, encoder_output, function)
 
         # Sample action (token) for entire batch from predicted vocab distribution
         # and set input for next forward pass
@@ -152,13 +155,13 @@ def train_generator_PGAC(context, reply, gen, dis, memory, critic, AC_optimizer,
 
             # Only put states of active episodes in replay memory
             old_state = samples.clone()
-            reward = dis.get_reward(samples[active_index,:t], action[active_index])
+            reward = dis.get_reward(samples[active_index, :t], action[active_index])
             samples[:, t] = action
             done_index = done.nonzero()
             active_ep_idx[done_index] = 0
 
-        for j,i in enumerate(active_index):
-            memory.push((old_state[i,:], action[i], log_p[i], reward[j], samples[i,:], done[i]))
+        for j, i in enumerate(active_index):
+            memory.push((old_state[i, :], action[i], log_p[i], reward[j], samples[i, :], done[i]))
 
         if memory.__len__() > AC_WARMUP:
             # Retrieve batch from replay memory
@@ -168,10 +171,10 @@ def train_generator_PGAC(context, reply, gen, dis, memory, critic, AC_optimizer,
             # Estimate state-action values for each state in batch using critic
             q_values = critic.forward(state.long())[torch.arange(BATCH_SIZE).to(DEVICE), action]
             with torch.no_grad():
-                mask = (done==False).float()
-                q_values_target = mask.float()*(DISCOUNT_FACTOR * \
-                    torch.max(critic.forward(next_state.long()), dim=1)[0].float()) \
-                    + reward
+                mask = (done == False).float()
+                q_values_target = mask.float() * (DISCOUNT_FACTOR * \
+                                                  torch.max(critic.forward(next_state.long()), dim=1)[0].float()) \
+                                  + reward
 
             # Compute combined actor critic loss and backprop
             actor_loss = -torch.mean(q_values)
@@ -196,12 +199,13 @@ def fill_with_padding(sentences, u_token, pad_token):
         idx = (sent == u_token).nonzero()
         if len(idx) > 0:
             idx = idx[0].item()
-            split = torch.split(sent, idx+1)[0].to(DEVICE)
+            split = torch.split(sent, idx + 1)[0].to(DEVICE)
             padding = pad_token * torch.ones(sentences.size(1) - len(split))
             padding = padding.to(DEVICE)
             pad_sent = torch.cat((split, padding))
             sentences[i][:] = pad_sent
     return sentences
+
 
 def calc_mean(rewards):
     batch_size, length = rewards.shape
@@ -214,9 +218,10 @@ def calc_mean(rewards):
         else:
             idx = length
         total += torch.mean(reward[0:idx])
-    return total/batch_size
+    return total / batch_size
 
-def train_discriminator(context,real_reply,gen, dis, dis_opt):
+
+def train_discriminator(context, real_reply, gen, dis, dis_opt):
     """
     Training the discriminator on real_data_samples (positive) and generated samples from generator (negative).
     Samples are drawn d_steps times, and the discriminator is trained for epochs epochs.
@@ -229,7 +234,7 @@ def train_discriminator(context,real_reply,gen, dis, dis_opt):
         dis_opt.zero_grad()
 
         with torch.no_grad():
-            fake_reply, _ , _= gen.sample(context, real_reply)
+            fake_reply, _, _ = gen.sample(context, real_reply)
         fake_reply = fill_with_padding(fake_reply, EOU, PAD).detach()
 
         # Get probabilities/rewards for real/fake
@@ -249,7 +254,7 @@ def train_discriminator(context,real_reply,gen, dis, dis_opt):
         dis_opt.zero_grad()
 
         with torch.no_grad():
-            fake_reply, _,_= gen.sample(context, real_reply)
+            fake_reply, _, _ = gen.sample(context, real_reply)
         fake_reply = fill_with_padding(fake_reply, EOU, PAD).detach()
 
         _, sentence_level_rewards_real = dis.get_rewards(real_reply.to(DEVICE), PAD)
@@ -257,9 +262,10 @@ def train_discriminator(context,real_reply,gen, dis, dis_opt):
 
         loss_fake = torch.mean(sentence_level_rewards_fake)
         loss_real = torch.mean(sentence_level_rewards_real)
-        total_loss =  -1 * (loss_real - loss_fake)
+        total_loss = -1 * (loss_real - loss_fake)
         total_loss.backward()
         dis_opt.step()
+
 
 def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
     """
@@ -319,11 +325,10 @@ def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
                 loss_fake = torch.mean(sentence_level_rewards_fake)
                 loss_real = torch.mean(sentence_level_rewards_real)
 
-                total_loss =  -1 * (loss_real - loss_fake)
+                total_loss = -1 * (loss_real - loss_fake)
                 total_loss.backward()
 
             dis_opt.step()
-
 
     # smooth results
     real = []
@@ -331,8 +336,8 @@ def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
     interval = 20
     for i in range(len(real_list)):
         if i % interval == 0:
-            real_mean = np.mean(real_list[i:i+interval])
-            fake_mean = np.mean(fake_list[i:i+interval])
+            real_mean = np.mean(real_list[i:i + interval])
+            fake_mean = np.mean(fake_list[i:i + interval])
             print("real mean ", real_mean)
             print("fake mean ", fake_mean)
             real.append(real_mean)
@@ -342,7 +347,7 @@ def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
     plt.plot(real, label='real')
     plt.plot(fake, label='fake')
     plt.ylabel('Reward')
-    plt.xlabel('Iterations x'+ str(interval))
+    plt.xlabel('Iterations x' + str(interval))
     plt.legend()
     plt.savefig('rewards.png')
 
@@ -350,8 +355,9 @@ def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
     plt.figure(2)
     plt.plot(losses)
     plt.ylabel("Loss")
-    plt.xlabel("iterations x "+ str(interval))
+    plt.xlabel("iterations x " + str(interval))
     plt.savefig("loss_disc_pretrain.png")
+
 
 def load_data(path='dataset.pickle'):
     """
@@ -360,8 +366,8 @@ def load_data(path='dataset.pickle'):
     if not os.path.isfile(path):
         # print("Saving the data set")
         corpus = DPCorpus(vocabulary_limit=VOCAB_SIZE)
-        train_dataset = corpus.get_train_dataset(min_reply_length=MIN_SEQ_LEN,\
-            max_reply_length=MAX_SEQ_LEN)
+        train_dataset = corpus.get_train_dataset(min_reply_length=MIN_SEQ_LEN, \
+                                                 max_reply_length=MAX_SEQ_LEN)
 
         with open(path, 'wb') as handle:
             pickle.dump(train_dataset, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -375,15 +381,17 @@ def load_data(path='dataset.pickle'):
         train_data_loader = DPDataLoader(train_dataset, batch_size=BATCH_SIZE)
     return train_data_loader
 
+
 def save_models(actor, discriminator, epoch, PG_optimizer, dis_optimizer):
     torch.save({
-                        'epoch': epoch+1,
-                        'actor': actor.state_dict(),
-                        'act_optimizer' : PG_optimizer.state_dict(),
-                        'dis_optimizer' : dis_optimizer.state_dict(),
-                        'discriminator': discriminator.state_dict()
-                    },'adversial_checkpoint{}.pth.tar'.format(epoch))
+        'epoch': epoch + 1,
+        'actor': actor.state_dict(),
+        'act_optimizer': PG_optimizer.state_dict(),
+        'dis_optimizer': dis_optimizer.state_dict(),
+        'discriminator': discriminator.state_dict()
+    }, 'adversial_checkpoint{}.pth.tar'.format(epoch))
     print("Models and Optimizers saved")
+
 
 def perform_evaluation(evaluator, actor):
     actor = actor.eval()
@@ -393,6 +401,7 @@ def perform_evaluation(evaluator, actor):
     print("Extrema Score: ", result['extrema_score'][0])
     print("Average (Cosine similarity): ", result['average'][0])
     actor = actor.train()
+
 
 if __name__ == '__main__':
     '''
@@ -409,43 +418,49 @@ if __name__ == '__main__':
     # Pretrain generator and discriminator
     if PRETRAIN_GENERATOR:
         print('Starting Generator MLE Training...')
-        gen = Generator(SOS,EOU,VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM, MAX_SEQ_LEN).to(DEVICE)
-        genMLE_optimizer = optim.Adam(gen.parameters(), lr = GEN_MLE_LR)
+        gen = Generator(SOS, EOU, VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM, MAX_SEQ_LEN).to(DEVICE)
+        genMLE_optimizer = optim.Adam(gen.parameters(), lr=GEN_MLE_LR)
         gen.train_generator_MLE(genMLE_optimizer, train_data_loader, MLE_TRAIN_EPOCHS)
 
     if PRETRAIN_DISCRIMINATOR:
         print('\nStarting Discriminator MLE Training...')
         # Initialize discriminator
         if SEQGAN:
-            dis = discriminator.Discriminator(DIS_EMBEDDING_DIM,\
-                DIS_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, device=DEVICE).to(DEVICE)
+            dis = discriminator.Discriminator(DIS_EMBEDDING_DIM, \
+                                              DIS_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, device=DEVICE).to(DEVICE)
         else:
             # dis = discriminator_LM.Discriminator(DIS_EMBEDDING_DIM, DIS_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, device=DEVICE).to(DEVICE)
             dis = discriminator_LM2.LM(DIS_EMBEDDING_DIM, VOCAB_SIZE, device=DEVICE).to(DEVICE)
-        dis_optimizer = optim.Adam(dis.parameters(),lr = DISCRIMINATOR_MLE_LR)
+        dis_optimizer = optim.Adam(dis.parameters(), lr=DISCRIMINATOR_MLE_LR)
 
         # Load pretrained generator
-        gen = Generator(SOS,EOU,VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM, MAX_SEQ_LEN).to(DEVICE)
+        gen = Generator(SOS, EOU, VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM, MAX_SEQ_LEN).to(DEVICE)
         saved_gen = torch.load(ACTOR_CHECKPOINT, map_location=DEVICE)
         gen.load_state_dict(saved_gen['state_dict'])
         pre_train_discriminator(dis, dis_optimizer, gen, corpus, DIS_TRAIN_EPOCHS)
+
     if POLICY_GRADIENT:
         ## ADVERSARIAL TRAINING
         # Initialize actor and discriminator using pre-trained state-dict
-        actor = Generator(SOS,EOU, VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM,\
-            MAX_SEQ_LEN).to(DEVICE)
-        actor.load_state_dict(torch.load(ACTOR_CHECKPOINT,map_location=DEVICE)['state_dict'])
+        actor = Generator(SOS, EOU, VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM, \
+                          MAX_SEQ_LEN).to(DEVICE)
+
+        if ACTOR_CHECKPOINT.exists():
+            actor.load_state_dict(torch.load(ACTOR_CHECKPOINT, map_location=DEVICE)['state_dict'])
+
         if SEQGAN:
-            discriminator = discriminator.Discriminator(DIS_EMBEDDING_DIM,\
-                DIS_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, device=DEVICE).to(DEVICE)
+            discriminator = discriminator.Discriminator(DIS_EMBEDDING_DIM, \
+                                                        DIS_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, device=DEVICE).to(
+                DEVICE)
         else:
             discriminator = discriminator_LM2.LM(DIS_EMBEDDING_DIM, VOCAB_SIZE, device=DEVICE).to(DEVICE)
 
-        if DISCRIMINATOR_CHECKPOINT:
-            discriminator.load_state_dict(torch.load(DISCRIMINATOR_CHECKPOINT,map_location=DEVICE))
+        if DISCRIMINATOR_CHECKPOINT.exists():
+            discriminator.load_state_dict(torch.load(DISCRIMINATOR_CHECKPOINT, map_location=DEVICE))
 
-        dis_optimizer = optim.Adagrad(discriminator.parameters(),lr=DISCRIMINATOR_LR)
-        evaluator = Evaluator(vocab_size=VOCAB_SIZE, min_seq_len=MIN_SEQ_LEN, max_seq_len=MAX_SEQ_LEN, batch_size=BATCH_SIZE_TESTING, device=DEVICE)
+        dis_optimizer = optim.Adagrad(discriminator.parameters(), lr=DISCRIMINATOR_LR)
+        evaluator = Evaluator(vocab_size=VOCAB_SIZE, min_seq_len=MIN_SEQ_LEN, max_seq_len=MAX_SEQ_LEN,
+                              batch_size=BATCH_SIZE_TESTING, device=DEVICE)
 
         # Define critic and dual optimizer
         if AC:
@@ -457,13 +472,13 @@ if __name__ == '__main__':
             memory = replay_memory.ReplayMemory(CAPACITY_RM)
         # Use optimizer for baseline DP-GAN
         else:
-            PG_optimizer = optim.Adagrad(actor.parameters(),ACTOR_LR)
+            PG_optimizer = optim.Adagrad(actor.parameters(), ACTOR_LR)
 
         # Adversarial training loop
         gen_data_loader = iter(load_data())
         gen_data_loader_tf = iter(load_data())
         dis_data_loader = iter(load_data())
-        num_batches = int(len(gen_data_loader)/2)
+        num_batches = int(len(gen_data_loader) / 2)
         N = ADV_TRAIN_EPOCHS * num_batches
         M = 1
         K = 5
@@ -481,13 +496,13 @@ if __name__ == '__main__':
             # TRAIN GENERATOR (ACTOR)
             for m in range(M):
                 try:
-                    context,reply = gen_data_loader.next()
+                    context, reply = gen_data_loader.next()
                 except StopIteration:
                     gen_data_loader = iter(load_data())
                 # AC step
                 if AC:
-                    perplexity = train_generator_PGAC(context.to(DEVICE), reply.to(DEVICE),\
-                        actor, discriminator, memory, critic, AC_optimizer,EOU,PAD)
+                    perplexity = train_generator_PGAC(context.to(DEVICE), reply.to(DEVICE), \
+                                                      actor, discriminator, memory, critic, AC_optimizer, EOU, PAD)
 
                     # Teacher forcing
                     try:
@@ -495,12 +510,12 @@ if __name__ == '__main__':
                     except:
                         gen_data_loader_tf = iter(load_data())
                     perplexity = train_generator_PG(context.to(DEVICE), reply.to(DEVICE), \
-                        actor, AC_optimizer, discriminator, num_samples=NUM_SAMPLES,TF=1)
+                                                    actor, AC_optimizer, discriminator, num_samples=NUM_SAMPLES, TF=1)
 
                 # PG step
                 else:
-                    perplexity = train_generator_PG(context.to(DEVICE), reply.to(DEVICE),\
-                        actor, PG_optimizer,discriminator,num_samples=NUM_SAMPLES)
+                    perplexity = train_generator_PG(context.to(DEVICE), reply.to(DEVICE), \
+                                                    actor, PG_optimizer, discriminator, num_samples=NUM_SAMPLES)
 
                     # Teacher forcing
                     try:
@@ -508,13 +523,13 @@ if __name__ == '__main__':
                     except:
                         gen_data_loader_tf = iter(load_data())
                     perplexity = train_generator_PG(context.to(DEVICE), reply.to(DEVICE), \
-                        actor, PG_optimizer, discriminator, num_samples=NUM_SAMPLES,TF=1)
+                                                    actor, PG_optimizer, discriminator, num_samples=NUM_SAMPLES, TF=1)
             # TRAIN DISCRIMINATOR
             for k in range(K):
                 try:
                     context, reply = dis_data_loader.next()
                 except StopIteration:
                     dis_data_loader = iter(load_data())
-                train_discriminator(context.to(DEVICE),reply.to(DEVICE), actor, discriminator, dis_optimizer)
+                train_discriminator(context.to(DEVICE), reply.to(DEVICE), actor, discriminator, dis_optimizer)
 
     print("DO NOT FORGET TO SAVE YOUR DATA IF YOU ARE RUNNING IN COLLAB")
