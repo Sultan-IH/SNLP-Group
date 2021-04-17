@@ -15,7 +15,7 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device('cpu')  # 'cuda:0'
 
-GEN_CHKPT_PATH = lambda e: f'/checkpoints/generator_checkpoint{e}.pth.tar'
+GEN_CHKPT_PATH = lambda e: f'./checkpoints/generator_checkpoint{e}.pth.tar'
 
 
 class Generator(nn.Module):
