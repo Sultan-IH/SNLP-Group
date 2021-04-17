@@ -46,7 +46,6 @@ CAPACITY_RM = 100000
 PRETRAIN_GENERATOR = True
 PRETRAIN_DISCRIMINATOR = True
 POLICY_GRADIENT = True
-ACTOR_CHECKPOINT= Path("generator_checkpoint19.pth.tar")
 
 DISCRIMINATOR_MLE_LR = 5e-4
 GEN_MLE_LR = 5e-4
@@ -57,10 +56,15 @@ DISCRIMINATOR_LR = 1e-2
 AC = False
 SEQGAN = True
 
+CHKPT_PATH = Path('./checkpoints')
+CHKPT_PATH.mkdir(exist_ok=True)
+
+ACTOR_CHECKPOINT = CHKPT_PATH / "generator_checkpoint19.pth.tar"  #  19th?
+
 if SEQGAN:
-    DISCRIMINATOR_CHECKPOINT = Path("discriminator_final.pth.tar")
+    DISCRIMINATOR_CHECKPOINT = CHKPT_PATH / "discriminator_final.pth.tar"
 else:
-    DISCRIMINATOR_CHECKPOINT = Path("discriminator_final_LM2.pth.tar")
+    DISCRIMINATOR_CHECKPOINT = CHKPT_PATH / "discriminator_final_LM2.pth.tar"
 
 AC_WARMUP = 1000
 DISCOUNT_FACTOR = 0.99
@@ -410,6 +414,8 @@ if __name__ == '__main__':
     Main training loop. Pre-trains the generator and discriminator using MLE
     and then uses PG to alternately train them.
     '''
+    print('making checkpoints directory ...')
+
     # Load data set
     train_data_loader = load_data()
     corpus = train_data_loader.dataset.corpus
@@ -437,9 +443,16 @@ if __name__ == '__main__':
 
         # Load pretrained generator
         gen = Generator(SOS, EOU, VOCAB_SIZE, GEN_HIDDEN_DIM, GEN_EMBEDDING_DIM, MAX_SEQ_LEN).to(DEVICE)
-        saved_gen = torch.load(ACTOR_CHECKPOINT, map_location=DEVICE)
-        gen.load_state_dict(saved_gen['state_dict'])
+
+        if ACTOR_CHECKPOINT.exists():
+            saved_gen = torch.load(ACTOR_CHECKPOINT, map_location=DEVICE)
+            gen.load_state_dict(saved_gen['state_dict'])
+
         pre_train_discriminator(dis, dis_optimizer, gen, corpus, DIS_TRAIN_EPOCHS)
+        torch.save({
+            'state_dict': dis.state_dict(),
+            'optimizer': dis_optimizer.state_dict(),
+        }, ACTOR_CHECKPOINT)
 
     if POLICY_GRADIENT:
         ## ADVERSARIAL TRAINING

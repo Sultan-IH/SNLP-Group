@@ -15,6 +15,8 @@ if torch.cuda.is_available():
 else:
     DEVICE = torch.device('cpu')  # 'cuda:0'
 
+GEN_CHKPT_PATH = lambda e: f'/checkpoints/generator_checkpoint{e}.pth.tar'
+
 
 class Generator(nn.Module):
     def __init__(
@@ -171,7 +173,7 @@ class Generator(nn.Module):
                         'state_dict': self.state_dict(),
                         'optimizer': optimizer.state_dict(),
                         'loss': losses,
-                    }, 'generator_checkpoint{}.pth.tar'.format(epoch))
+                    }, GEN_CHKPT_PATH(epoch))
 
                     try:
                         print(
