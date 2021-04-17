@@ -59,7 +59,7 @@ SEQGAN = True
 CHKPT_PATH = Path('./checkpoints')
 CHKPT_PATH.mkdir(exist_ok=True)
 
-ACTOR_CHECKPOINT = CHKPT_PATH / "generator_checkpoint19.pth.tar"  #  19th?
+ACTOR_CHECKPOINT = CHKPT_PATH / "generator_checkpoint19.pth.tar"
 
 if SEQGAN:
     DISCRIMINATOR_CHECKPOINT = CHKPT_PATH / "discriminator_final.pth.tar"
