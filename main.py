@@ -49,6 +49,8 @@ POLICY_GRADIENT = True
 ACTOR_CHECKPOINT= Path("generator_checkpoint19.pth.tar")
 
 DISCRIMINATOR_MLE_LR = 5e-2
+GEN_MLE_LR = 5e-2
+
 ACTOR_LR = 1e-2
 CRITIC_LR = 1e-2
 DISCRIMINATOR_LR = 1e-2
