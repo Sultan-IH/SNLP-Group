@@ -35,7 +35,7 @@ MAX_SEQ_LEN = 20
 BATCH_SIZE = 64
 MLE_TRAIN_EPOCHS = 100
 ADV_TRAIN_EPOCHS = 50
-DIS_TRAIN_EPOCHS = 2
+DIS_TRAIN_EPOCHS = 15
 
 GEN_EMBEDDING_DIM = 256
 GEN_HIDDEN_DIM = 256
@@ -59,7 +59,7 @@ SEQGAN = True
 CHKPT_PATH = Path('./checkpoints')
 CHKPT_PATH.mkdir(exist_ok=True)
 
-ACTOR_CHECKPOINT = CHKPT_PATH / "generator_checkpoint19.pth.tar"
+ACTOR_CHECKPOINT = CHKPT_PATH / "generator_final.pth.tar" # 76th, on daily dialogue
 
 if SEQGAN:
     DISCRIMINATOR_CHECKPOINT = CHKPT_PATH / "discriminator_final.pth.tar"
@@ -287,7 +287,7 @@ def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
     count = 0
     print("Number of epochs", epochs)
     for epoch in range(start_epoch, epochs):
-        print('epoch %d : ' % (epoch + 1))
+        print(f'[DIS MLE] epoch {epoch + 1}')
         total_loss = 0
         loss = nn.BCELoss()
         for (iter, (context, real_reply)) in enumerate(train_data_loader):
@@ -321,6 +321,8 @@ def pre_train_discriminator(dis, dis_opt, gen, corpus, epochs):
                 loss_total = loss_real + loss_fake
                 loss_total.backward()
                 losses.append(loss_total.item())
+                if (iter+1) % 50 == 0:
+                    print(f'[DIS MLE]: loss value at: {loss_total.item():.4f}')
             else:
                 rewards_real, sentence_level_rewards_real = dis.get_rewards(real_reply.to(DEVICE), PAD)
                 rewards, sentence_level_rewards_fake = dis.get_rewards(fake_reply.long().to(DEVICE), PAD)
