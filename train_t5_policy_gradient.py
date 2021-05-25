@@ -47,14 +47,14 @@ if __name__ == "__main__":
         "t5-small", additional_special_tokens=[USR_END_TKN], extra_ids=0
     )
     generator = T5ForConditionalGeneration.from_pretrained("t5-small").to(device)
+    generator_optimizer = AdamW(generator.parameters(), lr=5e-5)
     discriminator = T5ForConditionalGeneration.from_pretrained("t5-small").to(device)
-    optimizer = AdamW(discriminator.parameters(), lr=5e-5)
+    discriminator_optimizer = AdamW(discriminator.parameters(), lr=5e-5)
 
     generator.load_state_dict(torch.load("/home/piotr/nlp/SNLP-Group/generator.pt"))
     discriminator.load_state_dict(
         torch.load("/home/piotr/nlp/SNLP-Group/discriminator.pt")
     )
-    generator.eval()
 
     best_loss = np.float("inf")
 
@@ -63,14 +63,17 @@ if __name__ == "__main__":
         tokenizer("fake", return_tensors="pt").input_ids.to(device),
     )
 
-    for epoch in tqdm(range(100)):
-        train_loss, valid_loss = [], []
-        real_acc, fake_acc = [], []
-        random.shuffle(dialogue_lines)
+    D_steps, G_steps = 1, 1
+
+    rewards = []
+    d_loss, g_loss = [], []
+    for iter in tqdm(range(1000000)):
         discriminator.train()
-        for lines in dialogue_lines:
-            optimizer.zero_grad()
-            context, reply, disc_instance = dialogue_lines_to_io(lines)
+        for d_step in range(D_steps):
+            discriminator_optimizer.zero_grad()
+            context, reply, disc_instance = dialogue_lines_to_io(
+                random.choice(dialogue_lines)
+            )
             context, reply, disc_instance = (
                 context.to(device),
                 reply.to(device),
@@ -90,62 +93,59 @@ if __name__ == "__main__":
             )
             loss = output_real.loss + output_fake.loss
             loss.backward()
-            optimizer.step()
+            discriminator_optimizer.step()
 
-            train_loss.append(loss.item())
+            d_loss.append(loss.item())
 
         discriminator.eval()
-        for i, (lines) in enumerate(valid_dialogue_lines):
-            context, reply, disc_instance = dialogue_lines_to_io(lines)
-            context, reply, disc_instance = (
+        for g_step in range(G_steps):
+            generator_optimizer.zero_grad()
+            context, reply, disc_instance = dialogue_lines_to_io(
+                random.choice(dialogue_lines)
+            )
+            pad_reply = torch.cat([torch.tensor([[0]]), reply], dim=1)
+            context, reply, disc_instance, pad_reply = (
                 context.to(device),
                 reply.to(device),
                 disc_instance.to(device),
+                pad_reply.to(device),
             )
-            with torch.no_grad():
-                fake_reply = generator.generate(context, do_sample=True, max_length=50)[
-                    :, 1:-1
-                ]
-                output_real = discriminator(
-                    input_ids=torch.cat([disc_instance, reply[:, :-1]], dim=-1),
-                    labels=real_label,
-                )
-                output_fake = discriminator(
-                    input_ids=torch.cat([disc_instance, fake_reply], dim=-1),
-                    labels=fake_label,
-                )
-                real_acc.append(
-                    1
-                    if (
-                        "real"
-                        in tokenizer.decode(
-                            discriminator.generate(
-                                torch.cat([disc_instance, reply[:, :-1]], dim=-1)
-                            )[0]
-                        )
-                    )
-                    else 0
-                )
-                fake_acc.append(
-                    1
-                    if (
-                        "fake"
-                        in tokenizer.decode(
-                            discriminator.generate(
-                                torch.cat([disc_instance, fake_reply], dim=-1)
-                            )[0]
-                        )
-                    )
-                    else 0
-                )
-            loss = output_real.loss + output_fake.loss
-            valid_loss.append(loss.item())
+            fake_reply = generator.generate(context, do_sample=True, max_length=50)
+            fake_logits = (
+                generator(input_ids=context, decoder_input_ids=fake_reply[:, :-2])
+                .logits.max(dim=2)
+                .values
+            )
+            fake_reply = fake_reply[:, 1:-1]
 
-        train_loss, valid_loss = np.mean(train_loss), np.mean(valid_loss)
-        print(
-            f"Epoch {epoch + 1}, Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}, Real Acc: {np.mean(real_acc):.4f}, Fake Acc: {np.mean(fake_acc):.4f}"
-        )
-        if valid_loss < best_loss:
-            best_loss = valid_loss
-            torch.save(discriminator.state_dict(), "discriminator.pt")
+            real_logits = (
+                generator(input_ids=context, decoder_input_ids=pad_reply[:, :-2])
+                .logits.max(dim=2)
+                .values
+            )
+
+            with torch.no_grad():
+                reward = torch.softmax(
+                    discriminator(
+                        input_ids=torch.cat([disc_instance, fake_reply], dim=-1),
+                        decoder_input_ids=torch.tensor([[0]], device=device),
+                    ).logits[0, 0, [490, 9901]],
+                    0,
+                )[0].item()
+
+            rewards.append(reward)
+
+            loss = -(reward - np.mean(rewards)) * torch.sum(fake_logits) - (
+                1 - np.mean(rewards)
+            ) * torch.sum(real_logits)
+            loss.backward()
+            generator_optimizer.step()
+
+            g_loss.append(loss.item())
+
+        n = 10000
+        if iter % n == 0:
+            print(
+                f"Iter: {iter}, Reward: {np.mean(rewards[-n:])}, D-Loss: {np.mean(d_loss[-n:])}, G-Loss: {np.mean(g_loss[-n:])}"
+            )
 

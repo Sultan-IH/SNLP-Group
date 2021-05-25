@@ -41,6 +41,7 @@ if __name__ == "__main__":
         valid_dialogue_lines = fp.readlines()
 
     # dialogue_lines = dialogue_lines[:100]
+    # valid_dialogue_lines = valid_dialogue_lines[:100]
 
     device = torch.device("cuda")
     tokenizer = T5Tokenizer.from_pretrained(
@@ -80,9 +81,16 @@ if __name__ == "__main__":
                 fake_reply = generator.generate(context, do_sample=True, max_length=50)[
                     :, 1:-1
                 ]
+
+            reply = reply[:, :-1]
+            split_real = random.randint(1, reply.size(1))
+            reply = reply[:, :split_real]
+
+            split_fake = random.randint(1, fake_reply.size(1))
+            fake_reply = fake_reply[:, :split_fake]
+
             output_real = discriminator(
-                input_ids=torch.cat([disc_instance, reply[:, :-1]], dim=-1),
-                labels=real_label,
+                input_ids=torch.cat([disc_instance, reply], dim=-1), labels=real_label,
             )
             output_fake = discriminator(
                 input_ids=torch.cat([disc_instance, fake_reply], dim=-1),
@@ -106,8 +114,16 @@ if __name__ == "__main__":
                 fake_reply = generator.generate(context, do_sample=True, max_length=50)[
                     :, 1:-1
                 ]
+
+                reply = reply[:, :-1]
+                split_real = random.randint(1, reply.size(1))
+                reply = reply[:, :split_real]
+
+                split_fake = random.randint(1, fake_reply.size(1) - 1)
+                fake_reply = fake_reply[:, :split_fake]
+
                 output_real = discriminator(
-                    input_ids=torch.cat([disc_instance, reply[:, :-1]], dim=-1),
+                    input_ids=torch.cat([disc_instance, reply], dim=-1),
                     labels=real_label,
                 )
                 output_fake = discriminator(
@@ -147,5 +163,5 @@ if __name__ == "__main__":
         )
         if valid_loss < best_loss:
             best_loss = valid_loss
-            torch.save(discriminator.state_dict(), "discriminator.pt")
+            torch.save(discriminator.state_dict(), "partial_discriminator.pt")
 
