@@ -120,3 +120,8 @@ dmypy.json
 .DS_Store
 *.pt
 
+# vscode 
+.vscode/
+
+# huggingface
+checkpoints/
