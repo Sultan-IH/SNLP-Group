@@ -63,10 +63,10 @@ if __name__ == "__main__":
         tokenizer("fake", return_tensors="pt").input_ids.to(device),
     )
 
-    D_steps, G_steps = 1, 1
+    D_steps, G_steps = 5, 1
 
-    rewards = []
-    d_loss, g_loss = [], []
+    rewards = [0]
+    d_loss, g_loss = [0], [0]
     for iter in tqdm(range(1000000)):
         discriminator.train()
         for d_step in range(D_steps):
@@ -112,15 +112,25 @@ if __name__ == "__main__":
             )
             fake_reply = generator.generate(context, do_sample=True, max_length=50)
             fake_logits = (
-                generator(input_ids=context, decoder_input_ids=fake_reply[:, :-2])
-                .logits.max(dim=2)
+                torch.log_softmax(
+                    generator(
+                        input_ids=context, decoder_input_ids=fake_reply[:, :-1]
+                    ).logits,
+                    dim=2,
+                )
+                .max(dim=2)
                 .values
             )
             fake_reply = fake_reply[:, 1:-1]
 
             real_logits = (
-                generator(input_ids=context, decoder_input_ids=pad_reply[:, :-2])
-                .logits.max(dim=2)
+                torch.log_softmax(
+                    generator(
+                        input_ids=context, decoder_input_ids=pad_reply[:, :-1]
+                    ).logits,
+                    dim=2,
+                )
+                .max(dim=2)
                 .values
             )
 
@@ -133,19 +143,58 @@ if __name__ == "__main__":
                     0,
                 )[0].item()
 
-            rewards.append(reward)
-
-            loss = -(reward - np.mean(rewards)) * torch.sum(fake_logits) - (
+            loss = -(reward - np.mean(rewards)) * torch.mean(fake_logits) - (
                 1 - np.mean(rewards)
-            ) * torch.sum(real_logits)
+            ) * torch.mean(real_logits)
             loss.backward()
             generator_optimizer.step()
 
             g_loss.append(loss.item())
+            rewards.append(reward)
 
-        n = 10000
+        n = 100
+
         if iter % n == 0:
             print(
                 f"Iter: {iter}, Reward: {np.mean(rewards[-n:])}, D-Loss: {np.mean(d_loss[-n:])}, G-Loss: {np.mean(g_loss[-n:])}"
             )
+            print(f"DIALOGUE")
+            context, reply, disc_instance = dialogue_lines_to_io(
+                random.choice(dialogue_lines), prt=True, split_point=-1
+            )
+            print("GENERATED")
+            fake_reply = generator.generate(context.to("cuda"))
+            with torch.no_grad():
+                fake_logits = (
+                    torch.log_softmax(
+                        generator(
+                            input_ids=context.to(device),
+                            decoder_input_ids=fake_reply[:, :-1],
+                        ).logits,
+                        dim=2,
+                    )
+                    .max(dim=2)
+                    .values
+                )
+            fake_reply = fake_reply[:, 1:-1]
+            print(tokenizer.decode(fake_reply[0]))
+            print(
+                tokenizer.decode(
+                    discriminator.generate(
+                        torch.cat([disc_instance.to(device), fake_reply], dim=-1)
+                    )[0]
+                )
+            )
+            with torch.no_grad():
+                reward = torch.softmax(
+                    discriminator(
+                        input_ids=torch.cat(
+                            [disc_instance.to(device), fake_reply], dim=-1
+                        ),
+                        decoder_input_ids=torch.tensor([[0]], device=device),
+                    ).logits[0, 0, [490, 9901]],
+                    0,
+                )
+                print(reward, torch.mean(fake_logits).item())
+            print("\n")
 
