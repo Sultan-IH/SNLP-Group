@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
     generator.load_state_dict(torch.load("/home/piotr/nlp/SNLP-Group/generator.pt"))
     discriminator.load_state_dict(
-        torch.load("/home/piotr/nlp/SNLP-Group/discriminator.pt")
+        torch.load("/home/piotr/nlp/SNLP-Group/partial_discriminator.pt")
     )
 
     best_loss = np.float("inf")
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         tokenizer("fake", return_tensors="pt").input_ids.to(device),
     )
 
-    D_steps, G_steps = 1, 1
+    D_steps, G_steps = 5, 1
 
     rewards = [0]
     d_loss, g_loss = [0], [0]
@@ -83,9 +83,16 @@ if __name__ == "__main__":
                 fake_reply = generator.generate(context, do_sample=True, max_length=50)[
                     :, 1:-1
                 ]
+
+            reply = reply[:, :-1]
+            split_real = random.randint(1, reply.size(1))
+            reply = reply[:, :split_real]
+
+            split_fake = random.randint(1, fake_reply.size(1))
+            fake_reply = fake_reply[:, :split_fake]
+
             output_real = discriminator(
-                input_ids=torch.cat([disc_instance, reply[:, :-1]], dim=-1),
-                labels=real_label,
+                input_ids=torch.cat([disc_instance, reply], dim=-1), labels=real_label,
             )
             output_fake = discriminator(
                 input_ids=torch.cat([disc_instance, fake_reply], dim=-1),
@@ -111,37 +118,52 @@ if __name__ == "__main__":
                 pad_reply.to(device),
             )
             fake_reply = generator.generate(context, do_sample=True, max_length=50)
-            fake_logits = torch.log_softmax(
-                generator(
-                    input_ids=context, decoder_input_ids=fake_reply[:, :-1]
-                ).logits,
-                dim=2,
-            )[:, range(fake_reply.size(1) - 1), fake_reply[0, 1:]]
+            fake_logits = (
+                torch.log_softmax(
+                    generator(
+                        input_ids=context, decoder_input_ids=fake_reply[:, :-2]
+                    ).logits,
+                    dim=2,
+                )
+                .max(dim=2)
+                .values
+            )
             fake_reply = fake_reply[:, 1:-1]
 
-            real_logits = torch.log_softmax(
-                generator(
-                    input_ids=context, decoder_input_ids=pad_reply[:, :-1]
-                ).logits,
-                dim=2,
-            )[:, range(pad_reply.size(1) - 1), pad_reply[0, 1:]]
+            real_logits = (
+                torch.log_softmax(
+                    generator(
+                        input_ids=context, decoder_input_ids=pad_reply[:, :-2]
+                    ).logits,
+                    dim=2,
+                )
+                .max(dim=2)
+                .values
+            )
 
+            word_rewards = []
             with torch.no_grad():
-                reward = torch.softmax(
-                    discriminator(
-                        input_ids=torch.cat([disc_instance, fake_reply], dim=-1),
-                        decoder_input_ids=torch.tensor([[0]], device=device),
-                    ).logits[0, 0, [490, 9901]],
-                    0,
-                )[0].item()
+                for t in range(fake_reply.size(1)):
+                    word_reward = torch.softmax(
+                        discriminator(
+                            input_ids=torch.cat(
+                                [disc_instance, fake_reply[:, : t + 1]], dim=-1
+                            ),
+                            decoder_input_ids=torch.tensor([[0]], device=device),
+                        ).logits[0, 0, [490, 9901]],
+                        0,
+                    )[0].item()
+                    word_rewards.append(word_reward)
 
-            loss = -(reward - np.mean(rewards)) * torch.sum(fake_logits)
-            loss -= (1 - np.mean(rewards)) * torch.mean(real_logits)
+            loss = -torch.sum(
+                (torch.tensor(word_rewards).to(device) - np.mean(rewards)) * fake_logits
+            )
+            loss -= (1 - np.mean(rewards)) * torch.sum(real_logits)
             loss.backward()
             generator_optimizer.step()
 
             g_loss.append(loss.item())
-            rewards.append(reward)
+            rewards.append(np.mean(word_rewards))
 
         n = 100
 
@@ -154,7 +176,7 @@ if __name__ == "__main__":
                 random.choice(dialogue_lines), prt=True, split_point=-1
             )
             print("GENERATED")
-            fake_reply = generator.generate(context.to("cuda"), max_length=50)
+            fake_reply = generator.generate(context.to("cuda"))
             with torch.no_grad():
                 fake_logits = (
                     torch.log_softmax(
