@@ -63,7 +63,7 @@ if __name__ == "__main__":
         tokenizer("fake", return_tensors="pt").input_ids.to(device),
     )
 
-    D_steps, G_steps = 1, 1
+    D_steps, G_steps = 5, 1
 
     rewards = [0]
     d_loss, g_loss = [0], [0]
@@ -188,4 +188,5 @@ if __name__ == "__main__":
                 )
                 print(reward, torch.sum(fake_logits).item())
             print("\n")
+            torch.save(generator.state_dict(), "gan_generator.pt")
 
