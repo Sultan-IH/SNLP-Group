@@ -5,10 +5,10 @@ from src.constants import USR_END_TKN
 
 
 class Model(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, model=None, tokenizer=None) -> None:
         super().__init__()
-        self.model = T5ForConditionalGeneration.from_pretrained("t5-small")
-        self.tokenizer = T5Tokenizer.from_pretrained(
+        self.model = model or T5ForConditionalGeneration.from_pretrained("t5-small")
+        self.tokenizer = tokenizer or T5Tokenizer.from_pretrained(
             "t5-small", additional_special_tokens=[USR_END_TKN], extra_ids=0
         )
 

@@ -9,7 +9,9 @@ from src.constants import USR_END_TKN
 
 
 class DailyDialogueDataset(Dataset):
-    def __init__(self, filepath: str, tokenizer: PreTrainedTokenizer) -> None:
+    def __init__(
+        self, filepath: str, tokenizer: PreTrainedTokenizer, debug: bool = False
+    ) -> None:
         super().__init__()
 
         self.tokenizer = tokenizer
@@ -17,6 +19,9 @@ class DailyDialogueDataset(Dataset):
 
         with open(filepath, "r") as fp:
             dialogues = fp.readlines()
+
+        if debug:
+            dialogues = dialogues[:10]
 
         for lines in dialogues:
             lines = lines.rstrip("\n").rstrip(USR_END_TKN)
