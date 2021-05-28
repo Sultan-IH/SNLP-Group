@@ -91,7 +91,7 @@ def main():
         )
         if valid_loss < best_loss:
             best_loss = valid_loss
-            torch.save(generator.state_dict(), args.output_path)
+            torch.save(discriminator.state_dict(), args.output_path)
 
 
 if __name__ == "__main__":

@@ -13,9 +13,9 @@ class Model(torch.nn.Module):
         )
 
     @classmethod
-    def from_file(cls, filepath: str):
-        gen = cls()
-        gen.load_state_dict(torch.load(filepath))
+    def from_file(cls, filepath: str, tokenizer=None):
+        gen = cls(tokenizer=tokenizer)
+        print(gen.load_state_dict(torch.load(filepath), strict=False))
         return gen
 
     def forward(self, *args, **kwargs):

@@ -43,7 +43,6 @@ class Discriminator(Model):
                 input_ids=concat_dialogues(context, reply, self.tokenizer),
                 labels=self.label_real,
             )
-
         reward = torch.softmax(output.logits[0, 0, [490, 9901]], dim=0)[0].item()
 
         return reward
