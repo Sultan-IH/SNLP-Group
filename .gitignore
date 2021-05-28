@@ -119,7 +119,8 @@ dmypy.json
 # Mac files
 .DS_Store
 *.pt
-
+*.pickle
+*.txt
 # vscode 
 .vscode/
 

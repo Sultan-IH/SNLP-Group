@@ -17,26 +17,7 @@ DATA_ROOT = Path('dataloader/daily_dialog/')
 BATCH_SIZE = 1
 
 
-class Seq2SeqGenerator:
-    CHECKPOINT = Path('./checkpoints/generator_checkpoint76.pth.tar')
 
-    VOCAB_SIZE = 8000
-    MIN_SEQ_LEN = 5
-    MAX_SEQ_LEN = 20
-    GEN_EMBEDDING_DIM = 256
-    GEN_HIDDEN_DIM = 256
-
-    def __init__(self):
-        # create dialogue parser
-        parser = DailyDialogParser(DATA_ROOT, DPCorpus.SOS, DPCorpus.EOS, DPCorpus.EOU)
-        self.corpus = DPCorpus(parser)
-
-        self.generator = Generator(self.corpus.SOS, self.corpus.EOU, self.VOCAB_SIZE,
-                                   self.GEN_HIDDEN_DIM, self.GEN_EMBEDDING_DIM, self.MAX_SEQ_LEN).to(device)
-        self.generator.load_state_dict(torch.load(self.CHECKPOINT)['state_dict'])
-
-    def sample(self, data):
-        pass
 
 
 if torch.cuda.is_available():
@@ -99,7 +80,7 @@ if __name__ == "__main__":
     rewards = []
     d_loss, g_loss = [], []
     # EVALUATOR TRAINING
-    for iter in tqdm(range(1000000)):
+    for iter in tqdm(range(1_000_000)):
         discriminator.train()
         for d_step in range(D_steps):
             discriminator_optimizer.zero_grad()
