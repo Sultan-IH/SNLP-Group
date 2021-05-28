@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,6 +10,7 @@ from torch.nn.utils import clip_grad_norm_
 from pathlib import Path
 
 from src.seq2seq_corpus import DPCorpus, DPDataLoader, DailyDialogParser
+
 
 class Seq2SeqGenerator:
     CHECKPOINT = Path('./checkpoints/generator_checkpoint76.pth.tar')
@@ -39,14 +39,13 @@ class Seq2SeqGenerator:
         elif t == 'test':
             return
 
-    def tokenize(self, words):
-        pass
+    def tokenize(self, utterance):
+        return self.corpus.utterance_to_ids(utterance)
 
     def sample(self, context, reply):
-        self.generator.
+
+        self.generator.sample()
         pass
-
-
 
 
 class Generator(nn.Module):
@@ -73,13 +72,16 @@ class Generator(nn.Module):
         self.teacher_forcing_ratio = teacher_forcing_ratio
         self.max_len = max_len
 
-        self.encoder = EncoderRNN(vocab_size, max_len-1, hidden_size, 0, enc_dropout, enc_n_layers, True, 'gru', False, None)
-        self.decoder = DecoderRNN(vocab_size, max_len-1, hidden_size*2 if dec_bidirectional else hidden_size, sos_id, eou_id, dec_n_layers, 'gru', dec_bidirectional, 0, dec_dropout, True)
+        self.encoder = EncoderRNN(vocab_size, max_len - 1, hidden_size, 0, enc_dropout, enc_n_layers, True, 'gru',
+                                  False, None)
+        self.decoder = DecoderRNN(vocab_size, max_len - 1, hidden_size * 2 if dec_bidirectional else hidden_size,
+                                  sos_id, eou_id, dec_n_layers, 'gru', dec_bidirectional, 0, dec_dropout, True)
         # self.beam_decoder = TopKDecoder(self.decoder, beam_size)
         self.seq2seq = Seq2seq(self.encoder, self.decoder)
 
     def sample(self, src, tgt, TF=0):
-        sentences, probabilities, hiddens = self.seq2seq(src, target_variable=tgt, teacher_forcing_ratio=TF, sample=True)
+        sentences, probabilities, hiddens = self.seq2seq(src, target_variable=tgt, teacher_forcing_ratio=TF,
+                                                         sample=True)
         return sentences, probabilities, hiddens
 
     def forward(self, src, tgt, hack=False):
@@ -89,7 +91,7 @@ class Generator(nn.Module):
 
         batch_size = outputs[0].size(0)
         start_tokens = torch.zeros(batch_size, self.vocab_size, device=outputs[0].device)
-        start_tokens[:,self.sos_id] = 1
+        start_tokens[:, self.sos_id] = 1
 
         outputs = [start_tokens] + outputs
         outputs = torch.stack(outputs)
@@ -98,6 +100,7 @@ class Generator(nn.Module):
         return outputs
 
         # NOTICE THAT DISCOUNT FACTOR is 1
+
     def compute_reinforce_loss(self, rewards, probabilities):
         rewards = rewards.to(DEVICE)
         probabilities = probabilities.to(DEVICE)
@@ -107,14 +110,14 @@ class Generator(nn.Module):
         sent_len = rewards.size(1)
         J = 0
         for k in range(sent_len):
-            R_k = torch.sum(R_s_w[:,k:], 1)
-            prob = probabilities[:,k].log()
-            J += R_k*prob
+            R_k = torch.sum(R_s_w[:, k:], 1)
+            prob = probabilities[:, k].log()
+            J += R_k * prob
 
         loss = -torch.mean(J)
         return loss
 
-    def try_get_state_dicts(self,directory='./', prefix='generator_checkpoint', postfix='.pth.tar'):
+    def try_get_state_dicts(self, directory='./', prefix='generator_checkpoint', postfix='.pth.tar'):
         files = os.listdir(directory)
         files = [f for f in files if f.startswith(prefix)]
         files = [f for f in files if f.endswith(postfix)]
@@ -139,7 +142,7 @@ class Generator(nn.Module):
     def train_generator_MLE_batch(self, context, reply, optimizer, pad_id):
         context = context.t()
         reply = reply.t()
-        loss_func = torch.nn.NLLLoss(ignore_index=pad_id) # TO DEVICE?
+        loss_func = torch.nn.NLLLoss(ignore_index=pad_id)  # TO DEVICE?
         output = self.forward(context, reply)
         pred_dist = output[1:].view(-1, self.vocab_size)
         tgt_tokens = reply[1:].contiguous().view(-1)
@@ -148,7 +151,7 @@ class Generator(nn.Module):
         # Backpropagate loss
         optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_norm_(self.parameters(), 10) # might be something to check
+        nn.utils.clip_grad_norm_(self.parameters(), 10)  # might be something to check
         optimizer.step()
 
     def train_generator_MLE(self, optimizer, data_loader, epochs, device):
@@ -193,20 +196,20 @@ class Generator(nn.Module):
 
                 # Print updates
                 if iter % 50 == 0 and iter != 0:
-                    print('[Epoch {} iter {}] loss: {}'.format(epoch,iter,total_loss/50))
+                    print('[Epoch {} iter {}] loss: {}'.format(epoch, iter, total_loss / 50))
                     total_loss = 0
                     torch.save({
-                        'epoch': epoch+1,
+                        'epoch': epoch + 1,
                         'state_dict': self.state_dict(),
-                        'optimizer' : optimizer.state_dict(),
-                        'loss'      : losses,
-                    },'generator_checkpoint{}.pth.tar'.format(epoch))
+                        'optimizer': optimizer.state_dict(),
+                        'loss': losses,
+                    }, 'generator_checkpoint{}.pth.tar'.format(epoch))
 
                     try:
                         print("Generated reply")
-                        print(' '.join(corpus.ids_to_tokens([int(i) for i in output.argmax(2)[:,0]])))
+                        print(' '.join(corpus.ids_to_tokens([int(i) for i in output.argmax(2)[:, 0]])))
                         print("Real  reply")
-                        print(' '.join(corpus.ids_to_tokens([int(i) for i in reply[:,0]])))
+                        print(' '.join(corpus.ids_to_tokens([int(i) for i in reply[:, 0]])))
                     except:
                         print("Unable to print")
 
@@ -240,12 +243,13 @@ class Generator(nn.Module):
             for n in range(num_samples):
                 samples = reply.clone()
                 hidden = hiddens[t].to(DEVICE)
-                output = reply[:,t].to(DEVICE)
+                output = reply[:, t].to(DEVICE)
                 # samples_prob[:,0] = torch.ones(output.size())
                 # Pass through decoder and sample from resulting vocab distribution
-                for next_t in range(t+1, self.max_len):
-                    decoder_output, hidden, step_attn = self.decoder.forward_step(output.reshape(-1, 1).long(), hidden, encoder_output,
-                                                                             function=function)
+                for next_t in range(t + 1, self.max_len):
+                    decoder_output, hidden, step_attn = self.decoder.forward_step(output.reshape(-1, 1).long(), hidden,
+                                                                                  encoder_output,
+                                                                                  function=function)
                     # Sample token for entire batch from predicted vocab distribution
                     decoder_output = decoder_output.reshape(batch_size, self.vocab_size).detach()
                     batch_token_sample = torch.multinomial(torch.exp(decoder_output), 1).view(-1)
@@ -253,7 +257,8 @@ class Generator(nn.Module):
                     # samples_prob[:, next_t] = prob
                     samples[:, next_t] = batch_token_sample
                     output = batch_token_sample
-                reward = dis.batchClassify(samples.long().to(DEVICE), context.long().to(DEVICE)).detach() ## FIX CONTENT
+                reward = dis.batchClassify(samples.long().to(DEVICE),
+                                           context.long().to(DEVICE)).detach()  ## FIX CONTENT
                 rewards[t, n, :] = reward
         reward_per_word = torch.mean(rewards, dim=1).permute(1, 0)
         return reward_per_word
