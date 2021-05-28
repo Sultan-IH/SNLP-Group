@@ -21,31 +21,41 @@ class Seq2SeqGenerator:
     GEN_EMBEDDING_DIM = 256
     GEN_HIDDEN_DIM = 256
 
-    def __init__(self):
+    def __init__(self, device, data_root):
         # create dialogue parser
-        parser = DailyDialogParser(DATA_ROOT, DPCorpus.SOS, DPCorpus.EOS, DPCorpus.EOU)
+        self.device = device
+        self.data_root = data_root
+        parser = DailyDialogParser(self.data_root, DPCorpus.SOS, DPCorpus.EOS, DPCorpus.EOU)
+
         self.corpus = DPCorpus(parser)
 
-        self.generator = Generator(self.corpus.SOS, self.corpus.EOU, self.VOCAB_SIZE,
-                                   self.GEN_HIDDEN_DIM, self.GEN_EMBEDDING_DIM, self.MAX_SEQ_LEN).to(device)
+        self.generator = Generator(self.corpus.token_to_id(self.corpus.SOS), self.corpus.token_to_id(self.corpus.EOU),
+                                   self.VOCAB_SIZE, self.GEN_HIDDEN_DIM, self.GEN_EMBEDDING_DIM, self.MAX_SEQ_LEN).to(
+            device)
 
-        self.generator.load_state_dict(torch.load(self.CHECKPOINT)['state_dict'])
+        self.generator.load_state_dict(torch.load(self.CHECKPOINT, map_location=self.device)['state_dict'])
 
     def get_dataloader(self, t):
         if t == 'train':
-            return self.corpus
+            ds = self.corpus.get_train_dataset()
         elif t == 'valid':
-            return
+            ds = self.corpus.get_validation_dataset()
         elif t == 'test':
-            return
+            ds = self.corpus.get_test_dataset()
+        else:
+            raise ValueError()
+
+        return DPDataLoader(ds)
 
     def tokenize(self, utterance):
         return self.corpus.utterance_to_ids(utterance)
 
     def sample(self, context, reply):
-
-        self.generator.sample()
-        pass
+        context, reply = context.t().to(self.device), reply.t().to(self.device)
+        generated, logits, _ = self.generator.sample(context, reply)
+        generated = generated.cpu().detach().numpy().squeeze()
+        generated = ' '.join(self.corpus.ids_to_tokens([int(i) for i in generated]))
+        return generated, logits
 
 
 class Generator(nn.Module):
@@ -75,7 +85,7 @@ class Generator(nn.Module):
         self.encoder = EncoderRNN(vocab_size, max_len - 1, hidden_size, 0, enc_dropout, enc_n_layers, True, 'gru',
                                   False, None)
         self.decoder = DecoderRNN(vocab_size, max_len - 1, hidden_size * 2 if dec_bidirectional else hidden_size,
-                                  sos_id, eou_id, dec_n_layers, 'gru', dec_bidirectional, 0, dec_dropout, True)
+                                  int(sos_id), eou_id, dec_n_layers, 'gru', dec_bidirectional, 0, dec_dropout, True)
         # self.beam_decoder = TopKDecoder(self.decoder, beam_size)
         self.seq2seq = Seq2seq(self.encoder, self.decoder)
 
@@ -88,7 +98,7 @@ class Generator(nn.Module):
         src = src.t()
         tgt = tgt.t()
         outputs, _, meta_data = self.seq2seq(src, target_variable=tgt, teacher_forcing_ratio=self.teacher_forcing_ratio)
-
+        print(outputs)
         batch_size = outputs[0].size(0)
         start_tokens = torch.zeros(batch_size, self.vocab_size, device=outputs[0].device)
         start_tokens[:, self.sos_id] = 1
