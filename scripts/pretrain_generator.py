@@ -38,6 +38,8 @@ def main():
         tokenizer=generator.tokenizer,
     )
 
+    print(len(train_dataset), len(valid_dataset))
+
     optimizer = AdamW(generator.parameters(), lr=args.lr)
 
     best_loss = np.float("inf")
@@ -47,7 +49,7 @@ def main():
         generator.train()
         for ind in np.random.permutation(len(train_dataset)):
             optimizer.zero_grad()
-            context, reply = train_dataset[ind]
+            context, reply = train_dataset.sample_dialouge(ind)
             context, reply = context.to(device), reply.to(device)
             loss = generator.get_loss(input_ids=context, labels=reply)
             loss.backward()
@@ -57,7 +59,7 @@ def main():
 
         generator.eval()
         for ind in range(len(valid_dataset)):
-            context, reply = valid_loss[ind]
+            context, reply = valid_dataset[ind]
             context, reply = context.to(device), reply.to(device)
             with torch.no_grad():
                 loss = generator.get_loss(input_ids=context, labels=reply)

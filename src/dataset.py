@@ -1,3 +1,4 @@
+import random
 import re
 
 import numpy as np
@@ -21,25 +22,31 @@ class DailyDialogueDataset(Dataset):
             lines = lines.rstrip("\n").rstrip(USR_END_TKN)
             lines = re.sub(r'\s([?.!,"](?:\s|$))', r"\1", lines)
             lines = lines.split(USR_END_TKN)
+            splits = []
             for split_point in range(1, len(lines)):
                 context_str, reply_str = (
                     USR_END_TKN.join(lines[:split_point]),
                     lines[split_point],
                 )
                 context = self.tokenizer(
-                    f"reply to: {context_str}", return_tensors="pt", max_length=512
+                    context_str, return_tensors="pt", max_length=512
                 ).input_ids
                 reply = tokenizer(
                     reply_str, return_tensors="pt", max_length=512
                 ).input_ids
-                self._dialogues.append((context, reply))
+                splits.append((context, reply))
+            self._dialogues.append(splits)
 
     def __len__(self) -> int:
         return len(self._dialogues)
 
     def __getitem__(self, index):
-        return self._dialogues[index]
+        return self._dialogues[index][-1]
 
     def sample(self):
-        return self[np.random.choice(len(self))]
+        splits = self._dialogues[np.random.choice(len(self))]
+        return random.choice(splits)
+
+    def sample_dialouge(self, ind):
+        return random.choice(self._dialogues[ind])
 

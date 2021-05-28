@@ -18,3 +18,6 @@ class Model(torch.nn.Module):
         gen.load_state_dict(torch.load(filepath))
         return gen
 
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+
