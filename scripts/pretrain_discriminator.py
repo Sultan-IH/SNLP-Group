@@ -75,7 +75,7 @@ def main():
                 context.to(device),
                 real_reply.to(device),
             )
-            fake_reply = generator.generate(context, do_sample=False)
+            fake_reply = generator.generate(context, do_sample=True)
             with torch.no_grad():
                 loss, reward_real, reward_fake = discriminator.get_loss(
                     context, real_reply, fake_reply
