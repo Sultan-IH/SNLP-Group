@@ -161,6 +161,7 @@ if __name__ == "__main__":
     generator.generator.eval()
 
     for epoch in tqdm(range(10)):
+        print(epoch)
         discriminator.train()
         for batch_id, (context, reply) in enumerate(tqdm(trn_dl)):
             context_txt = generator.corpus.ids_to_tokens(context.numpy().squeeze())
@@ -193,8 +194,8 @@ if __name__ == "__main__":
             discriminator_optimizer.step()
             d_loss.append(loss.item())
 
-            if (batch_id + 1) % 100 == 0:
+            if (batch_id + 1) % 10000 == 0:
                 print(f"ADV EVAL train loss: [{loss.item():.5f}]")
-        discriminator.eval()
+                test_discriminator(generator, discriminator, prt=True)
         test_discriminator(generator, discriminator, prt=True)
 
