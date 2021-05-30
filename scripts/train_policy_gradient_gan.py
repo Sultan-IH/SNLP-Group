@@ -68,13 +68,15 @@ def main():
     discriminator_optimizer = AdamW(discriminator.parameters(), lr=args.lr)
 
     rewards = deque([], maxlen=args.log_every * args.generator_steps)
+    rewards_real = deque([], maxlen=args.log_every * args.generator_steps)
     generator_loss = deque([], maxlen=args.log_every * args.generator_steps)
     discriminator_loss = deque([], maxlen=args.log_every * args.discriminator_steps)
     best_reward = 0
 
+    generator.train()
+    discriminator.train()
+
     for iter in tqdm(range(args.num_iterations)):
-        generator.eval()
-        discriminator.train()
         for _ in range(args.discriminator_steps):
             discriminator_optimizer.zero_grad()
             context, real_reply = train_dataset.sample()
@@ -89,8 +91,6 @@ def main():
 
             discriminator_loss.append(loss.item())
 
-        generator.train()
-        discriminator.eval()
         for _ in range(args.generator_steps):
             generator_optimizer.zero_grad()
             context, real_reply = train_dataset.sample()
@@ -100,15 +100,17 @@ def main():
             )
             fake_reply = generator.generate(context, do_sample=True)
 
-            logprob_real = generator.get_logprob(context, real_reply)
             logprob_fake = generator.get_logprob(context, fake_reply)
             reward_fake = discriminator.get_reward(context, fake_reply)
 
-            baseline = 0 if len(rewards) == 0 else np.mean(rewards)
-            loss = -(reward_fake - baseline) * torch.sum(logprob_fake)
+            baseline = 0 if len(rewards) == 0 else np.mean(list(rewards))
+            loss = -(reward_fake - baseline) * torch.mean(logprob_fake)
 
             if args.teacher_forcing:
-                loss -= (1 - baseline) * torch.sum(logprob_real)
+                logprob_real = generator.get_logprob(context, real_reply)
+                reward_real = discriminator.get_reward(context, real_reply)
+                loss -= torch.mean(logprob_real)
+                rewards_real.append(reward_real)
 
             loss.backward()
             generator_optimizer.step()
@@ -118,12 +120,15 @@ def main():
 
         if iter % args.log_every == 0:
             mean_reward = np.mean(list(rewards))
+            mean_reward_real = np.mean(list(rewards_real))
 
             if args.discriminator_steps > 0:
                 print(f"Discriminator Loss {np.mean(list(discriminator_loss))}")
             if args.generator_steps > 0:
                 print(f"Generator Loss {np.mean(list(generator_loss))}")
-                print(f"Mean reward: {mean_reward}\n")
+                if args.teacher_forcing:
+                    print(f"Mean real reward: {mean_reward_real}")
+                print(f"Mean fake reward: {mean_reward}\n")
 
             context, real_reply = valid_dataset.sample()
             context, real_reply = (
