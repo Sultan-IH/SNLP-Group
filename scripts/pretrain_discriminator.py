@@ -25,6 +25,7 @@ def parse_args():
         "--output-path", type=str, default="discriminator_pretrained.pt"
     )
     parser.add_argument("--partial", action="store_true")
+    parser.add_argument("--freeze", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -35,8 +36,18 @@ def main():
     device = torch.device("cuda")
 
     generator = Generator.from_file(args.generator_path).to(device)
-    generator.eval()
+    if args.freeze:
+        for name, param in generator.named_parameters():
+            if ("shared" not in name) and ("decoder.block.5" not in name):
+                param.requires_grad = False
+        generator.eval()
+
     discriminator = Discriminator(tokenizer=generator.tokenizer).to(device)
+    if args.freeze:
+        for name, param in discriminator.named_parameters():
+            if ("shared" not in name) and ("decoder.block.5" not in name):
+                param.requires_grad = False
+
     train_dataset = DailyDialogueDataset(
         path_join(args.dataset_path, "train/dialogues_train.txt"),
         tokenizer=generator.tokenizer,
@@ -64,12 +75,6 @@ def main():
                 real_reply.to(device),
             )
             fake_reply = generator.generate(context, do_sample=True)
-
-            if args.partial:
-                split_real = random.randint(1, real_reply.size(1))
-                real_reply = real_reply[:, :split_real]
-                split_fake = random.randint(1, fake_reply.size(1) - 1)
-                fake_reply = fake_reply[:, :split_fake]
 
             loss, _, _ = discriminator.get_loss(context, real_reply, fake_reply)
             loss.backward()

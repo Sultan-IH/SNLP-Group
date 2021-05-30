@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--num-epochs", type=int, default=100)
     parser.add_argument("--output-path", type=str, default="generator_pretrained.pt")
+    parser.add_argument("--freeze", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -29,6 +30,11 @@ def main():
     device = torch.device("cuda")
 
     generator = Generator().to(device)
+    if args.freeze:
+        for name, param in generator.named_parameters():
+            if ("shared" not in name) and ("decoder.block.5" not in name):
+                param.requires_grad = False
+
     train_dataset = DailyDialogueDataset(
         path_join(args.dataset_path, "train/dialogues_train.txt"),
         tokenizer=generator.tokenizer,

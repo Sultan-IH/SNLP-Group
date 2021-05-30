@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument("--generator-steps", type=int, default=1)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--teacher-forcing", action="store_true")
+    parser.add_argument("--freeze", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -48,9 +49,17 @@ def main():
     device = torch.device("cuda")
 
     generator = Generator.from_file(args.generator_path).to(device)
+    if args.freeze:
+        for name, param in generator.named_parameters():
+            if ("shared" not in name) and ("decoder.block.5" not in name):
+                param.requires_grad = False
     discriminator = Discriminator.from_file(
         args.discriminator_path, tokenizer=generator.tokenizer
     ).to(device)
+    if args.freeze:
+        for name, param in discriminator.named_parameters():
+            if ("shared" not in name) and ("decoder.block.5" not in name):
+                param.requires_grad = False
     train_dataset = DailyDialogueDataset(
         path_join(args.dataset_path, "train/dialogues_train.txt"),
         tokenizer=generator.tokenizer,
