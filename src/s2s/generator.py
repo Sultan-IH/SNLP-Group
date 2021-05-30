@@ -1,15 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from seq2seq.EncoderRNN import EncoderRNN
-from seq2seq.DecoderRNN import DecoderRNN
-from seq2seq.Seq2Seq import Seq2seq
+from src.s2s.lib.EncoderRNN import EncoderRNN
+from src.s2s.lib.DecoderRNN import DecoderRNN
+from src.s2s.lib.Seq2Seq import Seq2seq
 
 from torch.nn.utils import clip_grad_norm_
 
 from pathlib import Path
 
-from src.seq2seq_corpus import DPCorpus, DPDataLoader, DailyDialogParser
+from src.s2s.corpus import DPCorpus, DPDataLoader, DailyDialogParser
 
 
 class Seq2SeqGenerator:
@@ -27,7 +27,7 @@ class Seq2SeqGenerator:
         self.data_root = data_root
         parser = DailyDialogParser(self.data_root, DPCorpus.SOS, DPCorpus.EOS, DPCorpus.EOU)
 
-        self.corpus = DPCorpus(parser)
+        self.corpus = DPCorpus(parser,vocabulary_limit=self.VOCAB_SIZE)
 
         self.generator = Generator(self.corpus.token_to_id(self.corpus.SOS), self.corpus.token_to_id(self.corpus.EOU),
                                    self.VOCAB_SIZE, self.GEN_HIDDEN_DIM, self.GEN_EMBEDDING_DIM, self.MAX_SEQ_LEN).to(
@@ -45,7 +45,7 @@ class Seq2SeqGenerator:
         else:
             raise ValueError()
 
-        return DPDataLoader(ds)
+        return DPDataLoader(ds, batch_size=1)
 
     def tokenize(self, utterance):
         return self.corpus.utterance_to_ids(utterance)

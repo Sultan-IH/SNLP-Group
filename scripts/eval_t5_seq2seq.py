@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from transformers import T5Tokenizer, T5ForConditionalGeneration, AdamW
 from tqdm import tqdm
-from src.seq2seq_gen import Seq2SeqGenerator
+from src.s2s.generator import Seq2SeqGenerator
 from pathlib import Path
 
 import torch
@@ -72,8 +72,33 @@ def dialogue_lines_to_seq2seq(lines, corpus, prt=False, split_point=None):
     return context_tok, reply_tok, disc_instance
 
 
-def test_discriminator(gen, disc):
-    gen
+def test_discriminator(gen, discriminator, prt=False):
+    discriminator.eval()
+    tst_dl = gen.get_dataloader('test')
+    real, fake = 0, 0
+
+    for total, (context, reply) in enumerate(tst_dl):
+        context_txt = generator.corpus.ids_to_tokens(context.numpy().squeeze())
+        disc_instance = tokenizer(f'classify: {context_txt} {USR_END_TKN} ', return_tensors="pt").input_ids.to(device)
+
+        with torch.no_grad():
+            fake_reply, _ = generator.sample(context.t(), reply.t())
+            fake_reply = tokenizer(fake_reply, return_tensors="pt").input_ids.view(1, -1).to(device)
+
+        output_real = discriminator(
+            input_ids=torch.cat([disc_instance, reply[:, :-1].view(1, -1)], dim=-1),
+            labels=real_label)
+
+        output_fake = discriminator(
+            input_ids=torch.cat([disc_instance, fake_reply], dim=-1),
+            labels=fake_label)
+
+        fake += 1 - output_fake.item() > 0.5
+        real += output_real.item() > 0.5
+
+    discriminator.train()
+    if prt:
+        print(f'real: [{real / total}] fake: [{fake / total}] overall: [{0.5 * (real + fake) / total}]')
 
 
 if __name__ == "__main__":
@@ -104,22 +129,15 @@ if __name__ == "__main__":
     d_loss = []
     # EVALUATOR TRAINING
     discriminator.train()
-
-    for i in tqdm(range(1_000_000)):
-        discriminator_optimizer.zero_grad()
-
-        context, reply, disc_instance = dialogue_lines_to_seq2seq(
-            random.choice(dialogue_lines), generator.corpus
-        )
-        context, reply, disc_instance = (
-            context.to(device),
-            reply.to(device),
-            disc_instance.to(device),
-        )
+    trn_dl = generator.get_dataloader('train')
+    generator.generator.eval()
+    for batch_id, (context, reply) in enumerate(tqdm(trn_dl)):
+        context_txt = generator.corpus.ids_to_tokens(context.numpy().squeeze())
+        disc_instance = tokenizer(f'classify: {context_txt} {USR_END_TKN} ', return_tensors="pt").input_ids.to(device)
 
         with torch.no_grad():
-            fake_reply, _ = generator.sample(context, torch.zeros(20, 1).long())
-            fake_reply = torch.LongTensor(tokenizer(fake_reply).input_ids).view(1, -1)
+            fake_reply, _ = generator.sample(context.t(), reply.t())
+            fake_reply = tokenizer(fake_reply, return_tensors="pt").input_ids.view(1, -1).to(device)
 
         output_real = discriminator(
             input_ids=torch.cat([disc_instance, reply[:, :-1].view(1, -1)], dim=-1),
@@ -133,7 +151,9 @@ if __name__ == "__main__":
         loss.backward()
         discriminator_optimizer.step()
         d_loss.append(loss.item())
-        if i + 1 % 10_000 == 0:
+
+        if batch_id + 1 % 100 == 0:
             print(f'ADV EVAL train loss: [{loss.item():.5f}]')
+            test_discriminator(generator, discriminator, prt=True)
 
     discriminator.eval()
