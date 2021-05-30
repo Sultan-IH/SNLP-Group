@@ -145,6 +145,10 @@ def main():
                 best_reward = mean_reward
                 torch.save(discriminator.state_dict(), args.discriminator_output_path)
                 torch.save(generator.state_dict(), args.generator_output_path)
+            torch.save(
+                discriminator.state_dict(), "all_" + args.discriminator_output_path
+            )
+            torch.save(generator.state_dict(), "all_" + args.generator_output_path)
 
 
 if __name__ == "__main__":
