@@ -17,7 +17,7 @@ class DailyDialogueDataset(Dataset):
         self.tokenizer = tokenizer
         self._dialogues = []
 
-        with open(filepath, "r") as fp:
+        with open(filepath, "r", encoding='utf8') as fp:
             dialogues = fp.readlines()
 
         if debug:
