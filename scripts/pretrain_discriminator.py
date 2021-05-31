@@ -76,6 +76,12 @@ def main():
             )
             fake_reply = generator.generate(context, do_sample=True)
 
+            if args.partial:
+                split_real = random.randint(1, real_reply.size(1))
+                real_reply = real_reply[:, :split_real]
+                split_fake = random.randint(1, fake_reply.size(1) - 1)
+                fake_reply = fake_reply[:, :split_fake]
+
             loss, _, _ = discriminator.get_loss(context, real_reply, fake_reply)
             loss.backward()
             optimizer.step()

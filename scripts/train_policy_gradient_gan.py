@@ -1,4 +1,5 @@
 import argparse
+import random
 from collections import deque
 from os.path import join as path_join
 
@@ -39,6 +40,7 @@ def parse_args():
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--teacher-forcing", action="store_true")
     parser.add_argument("--freeze", action="store_true")
+    parser.add_argument("--regs", action="store_true")
 
     args = parser.parse_args()
     return args
@@ -94,6 +96,13 @@ def main():
                 real_reply.to(device),
             )
             fake_reply = generator.generate(context, do_sample=True)
+
+            if args.regs:
+                split_real = random.randint(1, real_reply.size(1))
+                real_reply = real_reply[:, :split_real]
+                split_fake = random.randint(1, fake_reply.size(1) - 1)
+                fake_reply = fake_reply[:, :split_fake]
+
             loss, _, _ = discriminator.get_loss(context, real_reply, fake_reply)
             loss.backward()
             discriminator_optimizer.step()
@@ -113,7 +122,18 @@ def main():
             reward_fake = discriminator.get_reward(context, fake_reply)
 
             baseline = 0 if len(rewards) == 0 else np.mean(list(rewards))
-            loss = -(reward_fake - baseline) * torch.mean(logprob_fake)
+
+            if args.regs:
+                partial_rewards = torch.tensor(
+                    [
+                        discriminator.get_reward(context, fake_reply[:, :t])
+                        for t in range(1, fake_reply.size(1) + 1)
+                    ]
+                ).to(device)
+                loss = -torch.mean(partial_rewards * logprob_fake)
+
+            else:
+                loss = -(reward_fake - baseline) * torch.mean(logprob_fake)
 
             if args.teacher_forcing:
                 logprob_real = generator.get_logprob(context, real_reply)
