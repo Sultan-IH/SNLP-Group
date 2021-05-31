@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 USR_END_TKN = "__eou__"
-DATA_ROOT = "../data/"
+DATA_ROOT = "./data/"
 BATCH_SIZE = 1
 ADV_EVAL_EPOCHS = 10
 
@@ -91,8 +91,8 @@ def test_discriminator(gen, discriminator, prt=False):
             fake_reply, _ = generator.sample(context.t(), reply.t())
             fake_reply = (
                 tokenizer(fake_reply, return_tensors="pt")
-                .input_ids.view(1, -1)
-                .to(device)
+                    .input_ids.view(1, -1)
+                    .to(device)
             )
 
         reply = reply.to(device)
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     # EVALUATOR TRAINING
     discriminator.train()
     trn_dl = generator.get_dataloader("train")
-    generator.generator.eval()
+    generator.model.eval()
 
     for epoch in tqdm(range(10)):
         print(epoch)
@@ -172,11 +172,12 @@ if __name__ == "__main__":
             reply = reply.to(device)
 
             with torch.no_grad():
-                fake_reply, _ = generator.sample(context.t(), reply.t())
+                fake_reply, _ = generator.generate(context.t(), reply.t())
+                fake_reply = fake_reply.replace('</u>', '').rstrip() + '</u>'
                 fake_reply = (
                     tokenizer(fake_reply, return_tensors="pt")
-                    .input_ids.view(1, -1)
-                    .to(device)
+                        .input_ids.view(1, -1)
+                        .to(device)
                 )
 
             output_real = discriminator(
@@ -198,4 +199,3 @@ if __name__ == "__main__":
                 print(f"ADV EVAL train loss: [{loss.item():.5f}]")
                 test_discriminator(generator, discriminator, prt=True)
         test_discriminator(generator, discriminator, prt=True)
-

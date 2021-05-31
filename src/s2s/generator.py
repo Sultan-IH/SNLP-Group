@@ -29,11 +29,11 @@ class Seq2SeqGenerator:
 
         self.corpus = DPCorpus(parser,vocabulary_limit=self.VOCAB_SIZE)
 
-        self.generator = Generator(self.corpus.token_to_id(self.corpus.SOS), self.corpus.token_to_id(self.corpus.EOU),
+        self.model = Generator(self.corpus.token_to_id(self.corpus.SOS), self.corpus.token_to_id(self.corpus.EOU),
                                    self.VOCAB_SIZE, self.GEN_HIDDEN_DIM, self.GEN_EMBEDDING_DIM, self.MAX_SEQ_LEN).to(
             device)
 
-        self.generator.load_state_dict(torch.load(self.CHECKPOINT, map_location=self.device)['state_dict'])
+        self.model.load_state_dict(torch.load(self.CHECKPOINT, map_location=self.device)['state_dict'])
 
     def get_dataloader(self, t):
         if t == 'train':
@@ -50,9 +50,9 @@ class Seq2SeqGenerator:
     def tokenize(self, utterance):
         return self.corpus.utterance_to_ids(utterance)
 
-    def sample(self, context, reply):
+    def generate(self, context, reply):
         context, reply = context.t().to(self.device), reply.t().to(self.device)
-        generated, logits, _ = self.generator.sample(context, reply)
+        generated, logits, _ = self.model.sample(context, reply)
         generated = generated.cpu().detach().numpy().squeeze()
         generated = ' '.join(self.corpus.ids_to_tokens([int(i) for i in generated]))
         return generated, logits
