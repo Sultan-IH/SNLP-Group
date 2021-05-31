@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-DATA_ROOT = "./data/"
+DATA_ROOT = "../data/"
 BATCH_SIZE = 1
 ADV_EVAL_EPOCHS = 10
 
@@ -31,10 +31,12 @@ def test_discriminator(gen, discriminator, prt=False):
     real_rewards, fake_rewards = [], []
 
     for total, (context, reply) in enumerate(tqdm(tst_dl)):
-        context_txt = generator.detokenize(context.cpu().numpy().squeeze())
+        context_txt = generator.detokenize(
+            context.cpu().numpy().squeeze(), remove_eou=False
+        )
         reply = reply.to(device)
 
-        print(context_txt)
+        # print(context_txt)
         disc_instance = tokenizer(
             f"classify: {context_txt} {gen.corpus.EOU} ", return_tensors="pt"
         ).input_ids.to(device)
@@ -43,13 +45,17 @@ def test_discriminator(gen, discriminator, prt=False):
             fake_reply_txt, _ = generator.generate(context.t(), reply.t())
 
         reply_txt = generator.detokenize(reply)
-        print('real reply txt: ', reply_txt)
+        # print("real reply txt: ", reply_txt)
         reply_t5 = tokenizer(reply_txt, return_tensors="pt").input_ids.to(device)
         output_real = discriminator(
             input_ids=torch.cat([disc_instance, reply_t5.view(1, -1)], dim=-1),
             labels=real_label,
         )
-        fake_reply_t5 = tokenizer(fake_reply_txt, return_tensors="pt").input_ids.view(1, -1).to(device)
+        fake_reply_t5 = (
+            tokenizer(fake_reply_txt, return_tensors="pt")
+            .input_ids.view(1, -1)
+            .to(device)
+        )
         output_fake = discriminator(
             input_ids=torch.cat([disc_instance, fake_reply_t5], dim=-1),
             labels=fake_label,
@@ -92,7 +98,7 @@ if __name__ == "__main__":
     discriminator = T5ForConditionalGeneration.from_pretrained("t5-small").to(
         device
     )  #  evaluator
-    discriminator_optimizer = AdamW(discriminator.parameters(), lr=5e-5)
+    discriminator_optimizer = AdamW(discriminator.parameters(), lr=1e-3)
 
     best_loss = np.float("inf")
 
@@ -116,26 +122,33 @@ if __name__ == "__main__":
         print(epoch)
         discriminator.train()
         for batch_id, (context, reply) in enumerate(tqdm(trn_dl)):
-            context_txt = generator.detokenize(context.cpu().numpy().squeeze())
-            print('context txt: ', context_txt)
+            discriminator_optimizer.zero_grad()
+            context_txt = generator.detokenize(
+                context.cpu().numpy().squeeze(), remove_eou=False
+            )
+            # print("context txt: ", context_txt)
             disc_instance = tokenizer(
                 f"classify: {context_txt} ", return_tensors="pt"
             ).input_ids.to(device)
-            print('disc instance: ', f"classify: {context_txt} ")
+            # print("disc instance: ", f"classify: {context_txt} ")
             reply = reply.to(device)
 
             with torch.no_grad():
                 fake_reply, _ = generator.generate(context.t(), reply.t())
-                print('fake reply txt: ', fake_reply)
+                # print("fake reply txt: ", fake_reply)
 
             reply_txt = generator.detokenize(reply)
-            print('real reply txt: ', reply_txt)
+            # print("real reply txt: ", reply_txt)
             reply_t5 = tokenizer(reply_txt, return_tensors="pt").input_ids.to(device)
             output_real = discriminator(
                 input_ids=torch.cat([disc_instance, reply_t5.view(1, -1)], dim=-1),
                 labels=real_label,
             )
-            fake_reply_t5 = tokenizer(fake_reply, return_tensors="pt").input_ids.view(1, -1).to(device)
+            fake_reply_t5 = (
+                tokenizer(fake_reply, return_tensors="pt")
+                .input_ids.view(1, -1)
+                .to(device)
+            )
             output_fake = discriminator(
                 input_ids=torch.cat([disc_instance, fake_reply_t5], dim=-1),
                 labels=fake_label,
@@ -146,6 +159,6 @@ if __name__ == "__main__":
             discriminator_optimizer.step()
             d_loss.append(loss.item())
 
-            if (batch_id + 1) % 500 == 0:
+            if (batch_id + 1) % 10000 == 0:
                 print(f"ADV EVAL train loss: [{loss.item():.5f}]")
                 test_discriminator(generator, discriminator, prt=True)
