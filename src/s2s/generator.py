@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from src.s2s.lib.EncoderRNN import EncoderRNN
 from src.s2s.lib.DecoderRNN import DecoderRNN
 from src.s2s.lib.Seq2Seq import Seq2seq
+import re
 
 from torch.nn.utils import clip_grad_norm_
 
@@ -50,12 +51,24 @@ class Seq2SeqGenerator:
     def tokenize(self, utterance):
         return self.corpus.utterance_to_ids(utterance)
 
+    def detokenize(self, ids):
+        ids = ids.squeeze()
+        ids = [int(i) for i in ids]
+        utt = " ".join(self.corpus.ids_to_tokens(ids))
+        utt = re.sub(r'\s([?.!,"](?:\s|$))', r"\1", utt)
+        utt = utt.replace(self.corpus.EOU, '').rstrip() + self.corpus.EOU
+        utt = utt.replace(self.corpus.EOS, '')
+        utt = utt.replace(self.corpus.SOS, '')
+        utt = re.sub(' +', ' ', utt)
+
+        return utt
+
     def generate(self, context, reply):
         context, reply = context.t().to(self.device), reply.t().to(self.device)
         generated, logits, _ = self.model.sample(context, reply)
         generated = generated.cpu().detach().numpy().squeeze()
-        generated = ' '.join(self.corpus.ids_to_tokens([int(i) for i in generated]))
-        return generated, logits
+        generated_txt = self.detokenize(generated)
+        return generated_txt, logits
 
 
 class Generator(nn.Module):
