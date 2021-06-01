@@ -14,9 +14,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-DATA_ROOT = "../data/"
-BATCH_SIZE = 1
-ADV_EVAL_EPOCHS = 10
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
