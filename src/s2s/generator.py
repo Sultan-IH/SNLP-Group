@@ -1,3 +1,7 @@
+"""
+These files were taken from the https://github.com/jsbaan/DPAC-DialogueGAN repository to reproduce
+the results that were claimed in https://arxiv.org/abs/1701.06547 paper.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,7 +18,6 @@ from src.s2s.corpus import DPCorpus, DPDataLoader, DailyDialogParser
 
 
 class Seq2SeqGenerator:
-    CHECKPOINT = Path("./checkpoints/generator_checkpoint76.pth.tar")
 
     VOCAB_SIZE = 8000
     MIN_SEQ_LEN = 5
@@ -22,7 +25,7 @@ class Seq2SeqGenerator:
     GEN_EMBEDDING_DIM = 256
     GEN_HIDDEN_DIM = 256
 
-    def __init__(self, device, data_root):
+    def __init__(self, device, data_root, checkpoint):
         # create dialogue parser
         self.device = device
         self.data_root = data_root
@@ -42,7 +45,7 @@ class Seq2SeqGenerator:
         ).to(device)
 
         self.model.load_state_dict(
-            torch.load(self.CHECKPOINT, map_location=self.device)["state_dict"]
+            torch.load(checkpoint, map_location=self.device)["state_dict"]
         )
 
     def get_dataloader(self, t):
@@ -72,6 +75,10 @@ class Seq2SeqGenerator:
         utt = re.sub(" +", " ", utt)
 
         return utt
+
+    def to_t5_tokens(self, tokens, tokenizer, prefix=''):
+        string = self.detokenize(tokens.cpu().numpy())
+        return tokenizer(prefix + string, return_tensors="pt").input_ids.to(self.device)
 
     def generate(self, context, reply):
         context, reply = context.t().to(self.device), reply.t().to(self.device)

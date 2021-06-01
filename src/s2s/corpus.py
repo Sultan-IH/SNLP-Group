@@ -1,3 +1,8 @@
+"""
+These files were taken from the https://github.com/jsbaan/DPAC-DialogueGAN repository to reproduce
+the results that were claimed in https://arxiv.org/abs/1701.06547 paper.
+"""
+
 import nltk
 from collections import Counter
 import os

@@ -1,3 +1,6 @@
+import argparse
+from os.path import join as path_join
+
 import random
 import re
 
@@ -23,38 +26,52 @@ else:
     print("RUNNING ON CPU")
 
 
-def test_discriminator(gen, discriminator, prt=False):
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--dataset-path", type=str, default="../data/",
+    )
+    parser.add_argument("--num-epochs", type=int, default=100)
+    parser.add_argument("--generator-checkpoint", type=str, default="./checkpoints/generator_checkpoint76.pth.tar")
+    parser.add_argument(
+        "--output-path", type=str, default="discriminator_pretrained.pt"
+    )
+
+    args = parser.parse_args()
+    return args
+
+
+def test_discriminator(generator, discriminator, tokenizer, prt=False):
     discriminator.eval()
-    tst_dl = gen.get_dataloader("test")
+    tst_dl = generator.get_dataloader("test")
     real, fake = 0, 0
+
+    real_label, fake_label = (
+        tokenizer("real", return_tensors="pt").input_ids.to(device),
+        tokenizer("fake", return_tensors="pt").input_ids.to(device),
+    )
 
     real_rewards, fake_rewards = [], []
 
-    for total, (context, reply) in enumerate(tqdm(tst_dl)):
-        context_txt = generator.detokenize(
-            context.cpu().numpy().squeeze(), remove_eou=False
-        )
+    for context, reply in tqdm(tst_dl):
         reply = reply.to(device)
+        context = context.to(device)
 
-        # print(context_txt)
-        disc_instance = tokenizer(
-            f"classify: {context_txt} {gen.corpus.EOU} ", return_tensors="pt"
-        ).input_ids.to(device)
+        disc_instance = generator.to_t5_tokens(context, tokenizer, prefix='classify: ')
 
         with torch.no_grad():
             fake_reply_txt, _ = generator.generate(context.t(), reply.t())
 
-        reply_txt = generator.detokenize(reply)
-        # print("real reply txt: ", reply_txt)
-        reply_t5 = tokenizer(reply_txt, return_tensors="pt").input_ids.to(device)
+        reply_t5 = generator.to_t5_tokens(reply, tokenizer)
         output_real = discriminator(
             input_ids=torch.cat([disc_instance, reply_t5.view(1, -1)], dim=-1),
             labels=real_label,
         )
         fake_reply_t5 = (
             tokenizer(fake_reply_txt, return_tensors="pt")
-            .input_ids.view(1, -1)
-            .to(device)
+                .input_ids.view(1, -1)
+                .to(device)
         )
         output_fake = discriminator(
             input_ids=torch.cat([disc_instance, fake_reply_t5], dim=-1),
@@ -75,79 +92,61 @@ def test_discriminator(gen, discriminator, prt=False):
         real_rewards.append(real_reward)
 
     discriminator.train()
+    total = len(tst_dl)
     if prt:
         print(
-            f"real: [{real / (total + 1)}] fake: [{fake / (total + 1)}] overall: [{0.5 * (real + fake) / (total + 1)}]"
+            f"real: [{real / total}] fake: [{fake / total}] overall: [{0.5 * (real + fake) / total}]"
         )
         print(
             f"Real reward: {np.mean(real_rewards)}, Fake reward: {np.mean(fake_rewards)}"
         )
 
 
-if __name__ == "__main__":
-    with open(DATA_ROOT + "train.txt") as fp:
-        dialogue_lines = fp.readlines()
-    with open(DATA_ROOT + "validation.txt") as fp:
-        valid_dialogue_lines = fp.readlines()
+def main():
+    args = parse_args()
 
-    generator = Seq2SeqGenerator(device, DATA_ROOT)
+    generator = Seq2SeqGenerator(device, args.dataset_path, args.generator_checkpoint)
 
     tokenizer = T5Tokenizer.from_pretrained(
         "t5-small", additional_special_tokens=[generator.corpus.EOU], extra_ids=0
     )
     discriminator = T5ForConditionalGeneration.from_pretrained("t5-small").to(
         device
-    )  #  evaluator
+    )
     discriminator_optimizer = AdamW(discriminator.parameters(), lr=1e-3)
-
-    best_loss = np.float("inf")
 
     real_label, fake_label = (
         tokenizer("real", return_tensors="pt").input_ids.to(device),
         tokenizer("fake", return_tensors="pt").input_ids.to(device),
     )
-    """
-    Adversarial evaluation scheme is as follows:
-        - we first need to train the evaluator to distinguish between the machien generatred and human responses
-        - then we test the evaluator on an unsees dataset hoping that it would achieve 50% accuracy 
-    """
-    rewards = []
+
     d_loss = []
-    # EVALUATOR TRAINING
     discriminator.train()
     trn_dl = generator.get_dataloader("train")
     generator.model.eval()
 
-    for epoch in tqdm(range(10)):
-        print(epoch)
+    for _ in tqdm(range(args.num_epochs)):
         discriminator.train()
         for batch_id, (context, reply) in enumerate(tqdm(trn_dl)):
-            discriminator_optimizer.zero_grad()
-            context_txt = generator.detokenize(
-                context.cpu().numpy().squeeze(), remove_eou=False
-            )
-            # print("context txt: ", context_txt)
-            disc_instance = tokenizer(
-                f"classify: {context_txt} ", return_tensors="pt"
-            ).input_ids.to(device)
-            # print("disc instance: ", f"classify: {context_txt} ")
             reply = reply.to(device)
+            context = context.to(device)
+
+            discriminator_optimizer.zero_grad()
+
+            disc_instance = generator.to_t5_tokens(context, tokenizer, prefix='classify: ')
 
             with torch.no_grad():
                 fake_reply, _ = generator.generate(context.t(), reply.t())
-                # print("fake reply txt: ", fake_reply)
 
-            reply_txt = generator.detokenize(reply)
-            # print("real reply txt: ", reply_txt)
-            reply_t5 = tokenizer(reply_txt, return_tensors="pt").input_ids.to(device)
+            reply_t5 = generator.to_t5_tokens(reply, tokenizer)
             output_real = discriminator(
                 input_ids=torch.cat([disc_instance, reply_t5.view(1, -1)], dim=-1),
                 labels=real_label,
             )
             fake_reply_t5 = (
                 tokenizer(fake_reply, return_tensors="pt")
-                .input_ids.view(1, -1)
-                .to(device)
+                    .input_ids.view(1, -1)
+                    .to(device)
             )
             output_fake = discriminator(
                 input_ids=torch.cat([disc_instance, fake_reply_t5], dim=-1),
@@ -161,4 +160,8 @@ if __name__ == "__main__":
 
             if (batch_id + 1) % 10000 == 0:
                 print(f"ADV EVAL train loss: [{loss.item():.5f}]")
-                test_discriminator(generator, discriminator, prt=True)
+                test_discriminator(generator, discriminator, tokenizer, prt=True)
+
+
+if __name__ == '__main__':
+    main()
